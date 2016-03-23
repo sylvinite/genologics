@@ -6,9 +6,10 @@ class Thresholds():
     def __init__(self, instrument, chemistry, paired, read_length):
         self.Q30 = None
         self.exp_lane_clust = None
+        self.undet_indexes_perc = None
         
         #Check that only valid values are entered
-        self.valid_instruments = ['miseq', 'hiseq', 'HiSeqX']
+        self.valid_instruments = ['miseq', 'hiseq', 'hiseqx']
         self.valid_chemistry = ['MiSeq', 'HiSeq Rapid Flow Cell v1','HiSeq Rapid Flow Cell v2', 
                              'TruSeq Rapid Flow Cell v2', 'TruSeq Rapid Flow Cell v3', 'HiSeq Flow Cell v4', 'HiSeqX v2.5']
         
@@ -17,6 +18,7 @@ class Thresholds():
         else:
             self.set_Q30(instrument, chemistry, paired, read_length)
             self.set_exp_lane_clust(instrument, chemistry, paired, read_length)
+            self.set_undet_indexes_perc()
     
     """Q30 values are derived from governing document 1244:4"""
     #A lot of cases are still unhandled; also usage of the paired parameter is not apparent
@@ -51,7 +53,7 @@ class Thresholds():
                 if read_length >= 125:
                     self.Q30 = 80
                         
-        elif instrument == 'HiSeqX':
+        elif instrument == 'hiseqx':
             if chemistry == 'HiSeqX v2.5':
                 if read_length >= 150:
                     self.Q30 = 75
@@ -76,7 +78,7 @@ class Thresholds():
             #v4
             elif chemistry == 'HiSeq Flow Cell v4':
                 self.exp_lane_clust = 188000000
-        elif instrument == 'HiSeqX':
+        elif instrument == 'hiseqx':
             #HiSeqX runs are always paired!
             if paired:
                 #X v2.5 (common)
@@ -87,3 +89,9 @@ class Thresholds():
                     self.exp_lane_clust = 305000000
         if not self.exp_lane_clust:
             sys.exit("Can't set Clusters per lane. Detected setup is classed as valid but has no thresholds set in bcl_thresholds.py")
+            
+    """Maximum undetermined per lane are derived from the current taca.yaml"""      
+    def set_undet_indexes_perc(self):
+        self.undet_indexes_perc = 5
+            
+            

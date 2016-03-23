@@ -3,7 +3,7 @@
 This file together with bcl_thresholds.py performs the bclconversion step of LIMS workflow.
 In common tongue, it:
  
-Fetches info from the workflow process (RunID, FCID; derives instrument and data type)
+Fetches info from the sequencing process (RunID, FCID; derives instrument and data type)
 Assigns (Q30, Clust per Lane) thresholds to the process (workflow step)
 Reformats laneBarcode.html to 'demuxstats_FCID_TIME.csv' for usage of other applications
 Assigns a lot of info from laneBarcode.html to individual samples of the process (%PF etc)
@@ -41,11 +41,11 @@ def manipulate_workflow(demux_process):
     workflow_types = {'MiSeq Run (MiSeq) 4.0':'Reagent Cartridge ID', 'Illumina Sequencing (Illumina SBS) 4.0':'Flow Cell ID',
               'Illumina Sequencing (HiSeq X) 1.0':'Flow Cell ID'}
     for k,v in workflow_types.items():
-        #Workflow is null if it doesn't exist
+        #Sequencing step is null if it doesn't exist
         workflow = lims.get_processes(udf = {v : demux_container}, type = k)
-        #If workflow key exists
+        #If sequencing step key exists
         if(workflow):
-            #Copies LIMS workflow content
+            #Copies LIMS sequencing step content
             proc_stats = dict(workflow[0].udf.items())
             #Instrument is denoted the way it is since it is also used to find
             #the folder of the laneBarcode.html file
@@ -53,11 +53,14 @@ def manipulate_workflow(demux_process):
                 proc_stats['Chemistry'] ='MiSeq'
                 proc_stats['Instrument'] = 'miseq'
             elif 'Illumina Sequencing (Illumina SBS) 4.0' in k:
-                proc_stats['Chemistry'] = workflow[0].udf['Flow Cell Version']
+                try:
+                    proc_stats['Chemistry'] = workflow[0].udf['Flow Cell Version']
+                except:
+                    sys.exit("No flowcell version set in sequencing step.")
                 proc_stats['Instrument'] = 'hiseq'
             elif 'Illumina Sequencing (HiSeq X) 1.0' in k:
                 proc_stats['Chemistry'] ='HiSeqX v2.5'
-                proc_stats['Instrument'] = 'HiSeqX'
+                proc_stats['Instrument'] = 'hiseqx'
             else:
                 sys.exit("Unhandled prior workflow step (run type)")
             logging.info("Run type set to " + proc_stats['Chemistry'])
@@ -92,9 +95,19 @@ def manipulate_process(demux_process, proc_stats):
             demux_process.udf['Threshold for # Reads'] = thresholds.exp_lane_clust
         except:
             sys.exit("Udf improperly formatted. Unable to set # Reads threshold")
+    
+    #Would REALLY prefer 'Threshold for % undetermined reads per lane'
+    if not 'Threshold for Undemultiplexed Index Yield' in demux_process.udf:
+        try:
+            demux_process.udf['Undemultiplexed Index Yield'] = thresholds.undet_indexes_perc
+        except:
+            sys.exit("Udf improperly formatted. Unable to set Undemultiplexed Index Yield threshold")
 
     logging.info("Q30 threshold set to " + str(demux_process.udf['Threshold for % bases >= Q30']))
     logging.info("Minimum clusters per lane set to " + str(demux_process.udf['Threshold for # Reads']))
+    logging.info("Maximum percentage of undetermined per lane set to " + str(demux_process.udf['Undemultiplexed Index Yield']) + "%")
+    
+    
     
     #Sets run id if not already exists:
     if not 'Run ID' in demux_process.udf:
@@ -191,8 +204,8 @@ def write_demuxfile(proc_stats):
         lanebc_path = os.path.abspath(os.path.join(prefix , appendix))
     except:
         sys.exit("Unable to set demux filename. Udf does not contain keys for run id and/or flowcell id.")
-    #DEBUG, REMOVE WHEN DONE
-    lanebc_path = '/srv/mfs/isaktest/laneBarcode.html'
+    #TODO: Move to proper mfs once everything is tested
+    lanebc_path = os.path.join(os.sep,'srv','mfs', 'taca_test',proc_stats['Instrument'],'_data')
     try:
         laneBC = classes.LaneBarcodeParser(lanebc_path)
     except:
@@ -216,8 +229,10 @@ def write_demuxfile(proc_stats):
                 sys.exit("Flowcell parser is unable to fetch all necessary fields for demux file.")
     return laneBC.sample_data
 
-def converter(demux_process, epp_logger):
-    #Fetches workflow info
+#TODO1
+#def converter(demux_process, epp_logger):
+def converter(demux_process):
+    #Fetches info on 'workflow' level
     proc_stats = manipulate_workflow(demux_process)
     #Sets up the process values
     manipulate_process(demux_process, proc_stats)
@@ -226,22 +241,23 @@ def converter(demux_process, epp_logger):
     #Alters artifacts
     set_sample_values(demux_process, parser_struct, proc_stats)
     
-    #Attaches output files to lims process; crazyness
+    #Attaches output files to lims process; LIMS magic
     for out in demux_process.all_outputs():
         if out.name == "Demultiplex Stats":
-            attach_file(os.path.join(os.getcwd(), 'demuxstats' + '_' + proc_stats['Flow Cell ID'] + '_' + timestamp + '.csv'), out)
+            attach_file(os.path.join('demuxstats' + '_' + proc_stats['Flow Cell ID'] + '_' + timestamp + '.csv'), out)
         elif out.name == "QC Log File":
-            attach_file(os.path.join(os.getcwd(), 'runtime_'+ timestamp + '.log'), out)
+            attach_file(epp_logger.log_file, out)
 
 @click.command()
 @click.option('--project_lims_id', required=True,help='REQUIRED: Lims ID of project. Example:24-92373')
-@click.option('--rt_log', default='runtime_'+ timestamp + '.log', 
-              help='File name to log runtime information. Default:runtime_TIME.log') 
+@click.option('--rt_log', help='File name to log runtime information.') 
 def main(project_lims_id, rt_log):
     demux_process = Process(lims,id = project_lims_id)
+    #TODO2
+    converter(demux_process)
     #Sets up proper logging
-    with EppLogger(log_file=rt_log, lims=lims, prepend=True) as epp_logger:
-        converter(demux_process, epp_logger)      
+    #with EppLogger(log_file=rt_log, lims=lims, prepend=True) as epp_logger:
+    #    converter(demux_process, epp_logger)      
 if __name__ == '__main__':
     lims = Lims(BASEURI, USERNAME, PASSWORD)
     lims.check_version()
