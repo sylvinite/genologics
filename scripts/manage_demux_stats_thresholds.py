@@ -8,7 +8,7 @@ class Thresholds():
         self.exp_lane_clust = None
         self.undet_indexes_perc = None
         
-        #Check that only valid values are entered
+        #Checks that only supported values are entered
         self.valid_instruments = ["miseq", "hiseq", "hiseqx"]
         self.valid_chemistry = ["MiSeq", "HiSeq Rapid Flow Cell v1","HiSeq Rapid Flow Cell v2", 
                              "TruSeq Rapid Flow Cell v2", "TruSeq Rapid Flow Cell v3", "HiSeq Flow Cell v4", "HiSeqX v2.5"]
@@ -16,13 +16,12 @@ class Thresholds():
         if not instrument in self.valid_instruments or not chemistry in self.valid_chemistry:
             sys.exit("Detected instrument, chemistry and/or read_setup are not classed as valid in bcl_thresholds.py")
         else:
-            self.set_Q30(instrument, chemistry, paired, read_length)
+            self.set_Q30(instrument, chemistry, read_length)
             self.set_exp_lane_clust(instrument, chemistry, paired, read_length)
             self.set_undet_indexes_perc()
     
     """Q30 values are derived from governing document 1244:4"""
-    #A lot of cases are still unhandled; also usage of the paired parameter is not apparent
-    def set_Q30(self, instrument, chemistry, paired, read_length):
+    def set_Q30(self, instrument, chemistry, read_length):
         if instrument == "miseq":
             if chemistry == "MiSeq":
                 if read_length >= 250:
